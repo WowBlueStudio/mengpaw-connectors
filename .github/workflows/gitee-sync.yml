@@ -1,0 +1,30 @@
+# 自动同步到 Gitee 镜像仓库
+#
+# 前置条件（一次性配置）：
+# 1. 在 Gitee 创建同名仓库 WowBlueStudio/mengpaw-connectors
+# 2. 在 Gitee 生成私人令牌（Settings → 私人令牌，勾选 projects 权限）
+# 3. 把令牌添加为本仓库 GitHub Secret：仓库 Settings → Secrets and variables → Actions → 新建 GITEE_TOKEN
+#
+# 之后每次 push 到 main 即自动全量镜像到 Gitee。
+
+name: Sync to Gitee
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Mirror to Gitee
+        uses: wearerequired/git-mirror-action@v1
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        with:
+          source-branch: "main"
+          target-repo: "https://gitee.com/WowBlueStudio/mengpaw-connectors.git"

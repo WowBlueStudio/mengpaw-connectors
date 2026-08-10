@@ -1,6 +1,6 @@
 # Contributing to MengPaw Connectors
 
-感谢你愿意帮助迭代连接器生态！本仓库 **MIT 许可、社区开放贡献**。
+感谢你愿意帮助迭代 MengPaw 外置插件生态（8 个普通外置插件 + 5 个连接器）！本仓库 **MIT 许可、社区开放贡献**。
 
 ## 开发流程
 
@@ -19,7 +19,7 @@
 
 ## 代码规范
 
-- 包命名：`com.mengpaw.plugin.connector.{模块}`
+- 包命名：连接器 `com.mengpaw.plugin.connector.{模块}`；普通外置插件 `com.mengpaw.plugin.{模块}`
 - 类大驼峰，函数小驼峰
 - 注释中文
 - **禁止 `!!` 强制解包** — 用 `?.let {}` 或 `?: return` 替代
@@ -30,14 +30,15 @@
   // SPDX-License-Identifier: MIT
   ```
 - 每个文件不超过 400 行
-- 新增逻辑尽量在 `plugin-connector-common` 带单元测试
+- 新增逻辑尽量带单元测试（连接器共享逻辑放 `plugin-connector-common`）
 
 ## 行为准则
 
 - 保持与内核 SPI 的兼容：`kernelVersion` 对应主仓库 [MengPaw](https://github.com/WowBlueStudio/MengPaw) 的 git tag
-- 连接器只依赖内核构件（JitPack），不复制内核源码
+- 外置插件只依赖内核构件（JitPack），不复制内核源码
 - 连接器仅做协议互操作，不包含被对接方的专有代码
 
 ## 发布
 
-版本号格式 `v0.x.y`，tag 即发布（AAR 随 GitHub Releases 分发，由维护者执行）。
+版本号格式 `plugins-vX.Y.Z`，tag 即发布（dex JAR 随 GitHub/Gitee Releases 双源分发，由维护者执行；
+本地 `scripts/package-plugins.ps1` 打包 13 个外置插件）。

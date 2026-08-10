@@ -18,14 +18,14 @@ object ConnectorCommand {
      * config 命令 — 无参数查看脱敏配置; 带 --key value 参数则更新并原子保存。
      * 覆盖凭据需显式 --yes (对照 framework.trust --yes 先例, 防 Agent 无确认覆盖用户配置)。
      * Usage: <ns>.config [--yes] [--user U] [--password P] [--key-path F] [--key-passphrase P]
-     *                    [--ssh-port N] [--channel ssh|rest] [--agent-id ID] [--token T] [--cli-path F]
+     *                    [--ssh-port N] [--channel rest|ssh-acp] [--agent-id ID] [--token T] [--cli-path F]
      */
     fun configHandler(pluginId: String): CommandHandler = { args, _ ->
         val current = ConnectorConfigStore.read(pluginId)
         if (args.isEmpty()) {
             ExecutionResult.ok(
                 "当前连接配置:\n" + ConnectorConfigStore.describe(pluginId, current) +
-                "\n用法: ${nsOf(pluginId)}.config [--yes] [--user U] [--password P] [--key-path F] [--key-passphrase P] [--ssh-port N] [--channel ssh|rest] [--agent-id ID] [--token T] [--cli-path F]"
+                "\n用法: ${nsOf(pluginId)}.config [--yes] [--user U] [--password P] [--key-path F] [--key-passphrase P] [--ssh-port N] [--channel rest|ssh-acp] [--agent-id ID] [--token T] [--cli-path F]"
             )
         } else if (!args.contains("--yes")) {
             // 二次确认: 覆盖凭据是敏感操作, 未确认不改变状态
@@ -48,7 +48,12 @@ object ConnectorCommand {
                     "--key-path" -> updated.copy(keyPath = value.ifBlank { null })
                     "--key-passphrase" -> updated.copy(keyPassphrase = value.ifBlank { null })
                     "--ssh-port" -> updated.copy(sshPort = value.toIntOrNull() ?: 22)
-                    "--channel" -> updated.copy(channel = if (value in listOf("ssh", "rest")) value else "ssh")
+                    "--channel" -> updated.copy(
+                        channel = if (value in listOf("rest", "ssh-acp", "ssh")) {
+                            // "ssh" 为旧默认值别名 → 映射到 ssh-acp (QwenPaw 唯一 SSH 通道)
+                            if (value == "ssh") "ssh-acp" else value
+                        } else "rest"
+                    )
                     "--agent-id" -> updated.copy(agentId = value)
                     "--token" -> updated.copy(token = value.ifBlank { null })
                     "--cli-path" -> updated.copy(cliPath = value.ifBlank { null })

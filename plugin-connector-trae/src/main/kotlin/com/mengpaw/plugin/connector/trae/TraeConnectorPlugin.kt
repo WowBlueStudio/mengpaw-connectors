@@ -136,7 +136,7 @@ class TraeConnectorPlugin : Plugin, FrameworkAdapter {
     override suspend fun onUpgrade(newVersion: String) {}
 
     private fun cliOf(cfg: ConnectorConfigStore.ConnectorConfig): String =
-        cfg.cliPath?.takeIf { it.isNotBlank() } ?: "trae-cli"
+        ConnectorConfigStore.cliOf(cfg, "trae-cli")
 
     companion object {
         const val PLUGIN_ID = "connector-trae-plugin"

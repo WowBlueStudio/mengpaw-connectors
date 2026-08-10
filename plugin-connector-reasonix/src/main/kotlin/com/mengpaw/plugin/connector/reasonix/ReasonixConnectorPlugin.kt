@@ -131,7 +131,7 @@ class ReasonixConnectorPlugin : Plugin, FrameworkAdapter {
     override suspend fun onUpgrade(newVersion: String) {}
 
     private fun cliOf(cfg: ConnectorConfigStore.ConnectorConfig): String =
-        cfg.cliPath?.takeIf { it.isNotBlank() } ?: "reasonix"
+        ConnectorConfigStore.cliOf(cfg, "reasonix")
 
     companion object {
         const val PLUGIN_ID = "connector-reasonix-plugin"

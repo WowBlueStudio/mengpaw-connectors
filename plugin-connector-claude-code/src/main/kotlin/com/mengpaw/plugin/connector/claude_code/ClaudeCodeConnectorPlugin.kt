@@ -137,7 +137,7 @@ class ClaudeCodeConnectorPlugin : Plugin, FrameworkAdapter {
     override suspend fun onUpgrade(newVersion: String) {}
 
     private fun cliOf(cfg: ConnectorConfigStore.ConnectorConfig): String =
-        cfg.cliPath?.takeIf { it.isNotBlank() } ?: "claude"
+        ConnectorConfigStore.cliOf(cfg, "claude")
 
     companion object {
         const val PLUGIN_ID = "connector-claude-code-plugin"

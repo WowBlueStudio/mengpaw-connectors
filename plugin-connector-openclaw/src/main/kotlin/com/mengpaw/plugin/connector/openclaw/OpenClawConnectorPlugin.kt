@@ -10,6 +10,7 @@ import com.mengpaw.kernel.plugin.PluginType
 import com.mengpaw.kernel.spi.FrameworkAdapter
 import com.mengpaw.kernel.spi.FrameworkAdapterRegistry
 import com.mengpaw.kernel.spi.FrameworkTarget
+import com.mengpaw.plugin.connector.common.ConnectorCommand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -40,10 +41,14 @@ class OpenClawConnectorPlugin : Plugin, FrameworkAdapter {
         author = "MengPaw",
         description = "OpenClaw 框架连接器 — WebSocket (18789) 对接, 经 framework.connect/call 调用",
         minCoreVersion = "0.20.0",
-        commands = emptyList()
+        commands = listOf("connector-openclaw.info")
     )
 
-    override val commands: Map<String, com.mengpaw.kernel.plugin.CommandHandler> = emptyMap()
+    override val commands: Map<String, com.mengpaw.kernel.plugin.CommandHandler> = mapOf(
+        "info" to ConnectorCommand.infoHandler(PLUGIN_ID) {
+            if (isOnline()) "在线 (WebSocket: $connectedHost)" else "离线"
+        }
+    )
     override val uiButtons: List<com.mengpaw.kernel.plugin.PluginUiButton> = emptyList()
 
     // ── FrameworkAdapter ────────────────────────────────────────────────
@@ -52,30 +57,57 @@ class OpenClawConnectorPlugin : Plugin, FrameworkAdapter {
 
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var target: FrameworkTarget? = null
+    /** onOpen 后置 true, onClosed/onFailure 置 false — isOnline 的真实依据。 */
+    @Volatile private var connected = false
+    @Volatile private var connectedHost: String = ""
     private val client = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
-    private val pending = ConcurrentHashMap<Int, CompletableFuture<String>>()
+    // id 用 String key — JSON-RPC 响应 id 可能是 number 或 string, 兼容两种回显
+    private val pending = ConcurrentHashMap<String, CompletableFuture<String>>()
     private val idCounter = AtomicInteger(1)
 
     override suspend fun connect(target: FrameworkTarget): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val wsUrl = "ws://${target.address}:${target.port}"
             val request = Request.Builder().url(wsUrl).build()
+            val opened = CompletableFuture<Boolean>()
             val ws = client.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    this@OpenClawConnectorPlugin.connected = true
+                    opened.complete(true)
+                }
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     try {
-                        val id = JSONObject(text).optInt("id", -1)
-                        if (id >= 0) pending.remove(id)?.complete(text)
+                        val id = JSONObject(text).optString("id", "")
+                        if (id.isNotBlank()) pending.remove(id)?.complete(text)
                     } catch (_: Exception) {}
                 }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    this@OpenClawConnectorPlugin.connected = false
                     pending.values.forEach { it.completeExceptionally(t) }
                     pending.clear()
+                    opened.complete(false)
+                }
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    this@OpenClawConnectorPlugin.connected = false
                 }
             })
+            // 等待握手结果 — 连接失败立即返回失败, 不误报"已连接"
+            val ok = try {
+                opened.get(15, TimeUnit.SECONDS)
+            } catch (e: Exception) {
+                ws.cancel()
+                false
+            }
+            if (!ok) {
+                return@withContext Result.failure(IllegalStateException(
+                    "WebSocket 连接失败 ($wsUrl) — 检查 OpenClaw 是否已启动 mcp-serve 且端口 ${target.port} 可达"
+                ))
+            }
             this@OpenClawConnectorPlugin.webSocket = ws
             this@OpenClawConnectorPlugin.target = target
+            this@OpenClawConnectorPlugin.connectedHost = "${target.address}:${target.port}"
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -86,14 +118,16 @@ class OpenClawConnectorPlugin : Plugin, FrameworkAdapter {
         try { webSocket?.close(1000, "mengpaw-disconnect") } catch (_: Exception) {}
         webSocket = null
         target = null
+        connected = false
+        connectedHost = ""
         pending.values.forEach { it.completeExceptionally(IllegalStateException("disconnected")) }
         pending.clear()
     }
 
     override suspend fun callTool(tool: String, args: Map<String, String>): Result<String> {
         val ws = webSocket ?: return Result.failure(IllegalStateException("未连接 — 先执行 framework.connect"))
+        if (!connected) return Result.failure(IllegalStateException("WebSocket 已断开 — 重新执行 framework.connect"))
         val id = idCounter.getAndIncrement()
-        val jsonArgs = JSONObject(args).toString()
         val payload = JSONObject()
             .put("jsonrpc", "2.0")
             .put("method", "tools/call")
@@ -102,21 +136,21 @@ class OpenClawConnectorPlugin : Plugin, FrameworkAdapter {
             .toString()
         return try {
             val future = CompletableFuture<String>()
-            pending[id] = future
+            pending[id.toString()] = future
             if (!ws.send(payload)) {
-                pending.remove(id)
+                pending.remove(id.toString())
                 return Result.failure(IllegalStateException("WebSocket 发送失败"))
             }
             // 等响应 (最多 30s)
             val resp = future.get(30, TimeUnit.SECONDS)
             Result.success(resp)
         } catch (e: Exception) {
-            pending.remove(id)
+            pending.remove(id.toString())
             Result.failure(e)
         }
     }
 
-    override fun isOnline(): Boolean = webSocket != null
+    override fun isOnline(): Boolean = connected && webSocket != null
 
     // ── Plugin lifecycle ────────────────────────────────────────────────
 
@@ -131,4 +165,8 @@ class OpenClawConnectorPlugin : Plugin, FrameworkAdapter {
     }
 
     override suspend fun onUpgrade(newVersion: String) {}
+
+    companion object {
+        const val PLUGIN_ID = "connector-openclaw-plugin"
+    }
 }

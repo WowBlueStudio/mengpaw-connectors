@@ -19,6 +19,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URL
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -92,8 +94,19 @@ class QwenPawConnectorPlugin : Plugin, FrameworkAdapter {
         val cfg = ConnectorConfigStore.read(PLUGIN_ID)
         when (cfg.channel) {
             "rest" -> {
-                endpoint = "http://${target.address}:${target.port}"
-                Result.success(Unit)
+                // 连接时真实探测端点 (TCP 3s) — 端口不可达立即失败, 避免"假在线"
+                val sock = Socket()
+                try {
+                    sock.connect(InetSocketAddress(target.address, target.port), 3_000)
+                    endpoint = "http://${target.address}:${target.port}"
+                    Result.success(Unit)
+                } catch (e: Exception) {
+                    Result.failure(IllegalStateException(
+                        "QwenPaw REST 端点不可达 (${target.address}:${target.port}): ${e.message} — 检查 PC 端 qwenpaw app 是否已启动"
+                    ))
+                } finally {
+                    try { sock.close() } catch (_: Exception) {}
+                }
             }
             "ssh-acp" -> connectSshAcp(target, cfg)
             else -> Result.failure(IllegalStateException("未知通道: ${cfg.channel} (可用: rest / ssh-acp)"))
@@ -116,7 +129,7 @@ class QwenPawConnectorPlugin : Plugin, FrameworkAdapter {
                 "SSH 连接失败 (${target.address}:$port): ${connected.exceptionOrNull()?.message} — 检查 PC 端 OpenSSH Server 与凭据"
             ))
         }
-        val cli = cfg.cliPath?.takeIf { it.isNotBlank() } ?: "qwenpaw"
+        val cli = ConnectorConfigStore.cliOf(cfg, "qwenpaw")
         val chResult = t.openInteractive("\"$cli\" acp")
         if (chResult.isFailure) {
             t.disconnect()

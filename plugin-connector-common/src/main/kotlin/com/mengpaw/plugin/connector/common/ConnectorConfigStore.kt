@@ -21,8 +21,8 @@ object ConnectorConfigStore {
         val password: String? = null,
         val keyPath: String? = null,
         val keyPassphrase: String? = null,
-        /** 通道: ssh (默认, SSH 执行 CLI) | rest (HTTP 直连, 仅 qwenpaw 支持)。 */
-        val channel: String = "ssh",
+        /** 通道: rest (默认, HTTP 直连, 仅 qwenpaw 支持) | ssh-acp (SSH 执行 qwenpaw acp, 实验性)。 */
+        val channel: String = "rest",
         /** REST 通道的 Agent ID (qwenpaw)。 */
         val agentId: String = "default",
         /** REST 通道认证 token (qwenpaw app 开启认证时必填, Authorization: Bearer)。 */
@@ -45,7 +45,7 @@ object ConnectorConfigStore {
                 password = if (j.has("password") && !j.isNull("password")) j.optString("password") else null,
                 keyPath = if (j.has("keyPath") && !j.isNull("keyPath")) j.optString("keyPath") else null,
                 keyPassphrase = if (j.has("keyPassphrase") && !j.isNull("keyPassphrase")) j.optString("keyPassphrase") else null,
-                channel = j.optString("channel", "ssh"),
+                channel = j.optString("channel", "rest"),
                 agentId = j.optString("agentId", "default"),
                 token = if (j.has("token") && !j.isNull("token")) j.optString("token") else null,
                 cliPath = if (j.has("cliPath") && !j.isNull("cliPath")) j.optString("cliPath") else null,
@@ -94,5 +94,16 @@ object ConnectorConfigStore {
         if (!token.isNullOrBlank()) appendLine("REST Token: ${"*".repeat(token.length)}")
         appendLine("CLI 路径: ${cfg.cliPath ?: "PATH 查找"}")
         appendLine("⚠️ 凭据明文存于本机 配置/$pluginId-connector.json — 仅限个人局域网使用")
+    }
+
+    /**
+     * 解析 CLI 绝对路径 — 兼容配置里带外层引号的写法 (文档示例 "C:\tools\claude.cmd")。
+     * 命令拼接时统一再包一层引号, 若此处不剥离会产生 `""C:\path" ...` 双重引号,
+     * Windows cmd 下含空格路径会解析错误。
+     */
+    fun cliOf(cfg: ConnectorConfig, defaultName: String): String {
+        val raw = cfg.cliPath?.trim().orEmpty()
+        if (raw.isBlank()) return defaultName
+        return raw.removePrefix("\"").removeSuffix("\"").trim()
     }
 }

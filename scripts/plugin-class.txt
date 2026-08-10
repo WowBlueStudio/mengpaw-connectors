@@ -1,0 +1,7 @@
+# 宿主可加载产物主类清单 — 格式: <模块目录名>: <插件主类全限定名>
+# 打包脚本 scripts/package-connectors.ps1 据此写入各 jar 的 META-INF/plugin-class。
+plugin-connector-openclaw: com.mengpaw.plugin.connector.openclaw.OpenClawConnectorPlugin
+plugin-connector-qwenpaw: com.mengpaw.plugin.connector.qwenpaw.QwenPawConnectorPlugin
+plugin-connector-claude-code: com.mengpaw.plugin.connector.claude_code.ClaudeCodeConnectorPlugin
+plugin-connector-reasonix: com.mengpaw.plugin.connector.reasonix.ReasonixConnectorPlugin
+plugin-connector-trae: com.mengpaw.plugin.connector.trae.TraeConnectorPlugin

@@ -37,3 +37,6 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+
+# ── 构建/发布产物 (fat dex JAR 由 scripts/package-connectors.ps1 生成, 上传 GitHub release 不经 git) ──
+releases/

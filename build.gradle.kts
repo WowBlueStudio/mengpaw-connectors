@@ -9,4 +9,4 @@ plugins {
 // ── 内核构件版本 (JitPack) ─────────────────────────────
 // 对应 MengPaw 主仓库 git tag (com.github.WowBlueStudio.MengPaw:mengpaw-kernel:<tag>)。
 // FrameworkAdapter SPI 随内核演进 — 升级内核时同步修改此处, 并验证全部模块编译通过。
-extra["kernelVersion"] = "v0.23.0"
+extra["kernelVersion"] = "v0.35.5"

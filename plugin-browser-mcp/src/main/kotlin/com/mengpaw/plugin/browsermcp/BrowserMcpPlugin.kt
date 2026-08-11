@@ -35,7 +35,7 @@ class BrowserMcpPlugin : Plugin, McpToolProvider {
         version = "0.3.0",
         type = PluginType.NATIVE,
         author = "MengPaw",
-        description = "将 MP 浏览器能力暴露为 MCP 工具：导航/截图/点击/输入/提取/执行脚本 (设备内 HTTP 桥)",
+        description = "将 MP 浏览器能力暴露为 MCP 工具：page.* 半自动武器命令面 (导航/分段截图/坐标点击/表单/过滤提取) + 标签页/Cookie/存储 (设备内 HTTP 桥)",
         permissions = emptyList(),
         minCoreVersion = "0.2.3",
         commands = listOf("browser.mcp.tools", "browser.mcp.status", "browser.mcp.invoke")
@@ -103,41 +103,77 @@ class BrowserMcpPlugin : Plugin, McpToolProvider {
         Result.failure(e)
     }
 
-    override fun getTools(): List<McpTool> = listOf(
-        McpTool("browser_navigate", "Navigate to a URL",
-            mapOf("url" to mapOf("type" to "string", "description" to "The URL to navigate to"))),
-        McpTool("browser_screenshot", "Capture a screenshot of the current page",
-            mapOf("fullPage" to mapOf("type" to "boolean", "description" to "Capture full page or viewport only"))),
-        McpTool("browser_click", "Click an element by CSS selector",
-            mapOf("selector" to mapOf("type" to "string", "description" to "CSS selector of the element to click"))),
-        McpTool("browser_type", "Type text into an input element",
-            mapOf("selector" to mapOf("type" to "string"), "text" to mapOf("type" to "string"))),
-        McpTool("browser_extract", "Extract structured page content (title, links, forms, text)",
-            emptyMap()),
-        McpTool("browser_eval", "Execute JavaScript in the page",
-            mapOf("script" to mapOf("type" to "string", "description" to "JavaScript code to execute"))),
-        // ── P1 fix: 内置 browser.* 命令合流 (BuiltinBrowserPlugin 经 9880 桥暴露) ──
-        McpTool("tabs", "List all browser tabs (id/url/title/loading state)",
-            emptyMap()),
-        McpTool("tab", "Switch to tab by id",
-            mapOf("n" to mapOf("type" to "int", "description" to "Tab id"))),
-        McpTool("nav", "Navigate to URL and auto-extract content (efficient single call)",
-            mapOf("url" to mapOf("type" to "string", "description" to "URL to open"))),
-        McpTool("content", "Extract structured page content (title, links, forms, text)",
-            emptyMap()),
-        McpTool("screenshot.full", "Full-page stitched screenshot for coordinate-based interaction",
-            mapOf("maxHeight" to mapOf("type" to "int", "description" to "Max page height in px (default 15000)"))),
-        McpTool("coord.click", "Tap at absolute page coordinates (from screenshot.full image)",
-            mapOf("x" to mapOf("type" to "int"), "y" to mapOf("type" to "int"))),
-        McpTool("wait.selector", "Wait for a CSS selector to appear (polling)",
-            mapOf("selector" to mapOf("type" to "string"), "timeoutMs" to mapOf("type" to "int", "description" to "Max wait, default 5000"))),
-        McpTool("cookies", "Get cookies for the current URL",
-            emptyMap()),
-        McpTool("storage", "Get/set/clear localStorage or sessionStorage",
-            mapOf("type" to mapOf("type" to "string", "description" to "local or session"),
-                "op" to mapOf("type" to "string", "description" to "get/set/clear"),
-                "key" to mapOf("type" to "string"), "value" to mapOf("type" to "string"))),
-    )
+    override fun getTools(): List<McpTool> = pageTools() + browserTools()
+
+    private fun pageTools(): List<McpTool> {
+        fun p(type: String, desc: String) = mapOf("type" to type, "description" to desc)
+        return listOf(
+            // 半自动合体 (决策 #1/#5)
+            McpTool("page.load", "半自动合体: 导航 + 精确等待 + 自动全页分段截图 + 坐标系统 (超长页按段返回, partial:true 标注)",
+                mapOf("url" to p("string", "URL to navigate"), "maxHeight" to p("int", "Max page height in px (default 15000)"))),
+            McpTool("page.goto", "导航 + 精确等待 onPageFinished",
+                mapOf("url" to p("string", "URL to navigate"), "wait" to p("string", "domcontentloaded|networkidle"))),
+            // 截图 (决策 #3: 只回路径 + 尺寸/坐标)
+            McpTool("page.screenshot", "全页(超长按段)/视口截图, 只回路径 + 尺寸/坐标",
+                mapOf("full" to p("boolean", "true=全页分段"), "view" to p("boolean", "true=视口"))),
+            McpTool("page.screenshot.element", "元素截图",
+                mapOf("selector" to p("string", "CSS selector"))),
+            // 交互
+            McpTool("page.click", "按段坐标点击 <seg> <x> <y> 或选择器点击 <css>",
+                mapOf("seg" to p("int", "Segment number (default 1)"), "x" to p("int", "X in segment image"),
+                    "y" to p("int", "Y in segment image"), "selector" to p("string", "CSS selector (alternative)"))),
+            McpTool("page.fill", "向输入框输入文本",
+                mapOf("selector" to p("string", "CSS selector"), "text" to p("string", "Text to input"))),
+            McpTool("page.select", "下拉选值",
+                mapOf("selector" to p("string", "CSS selector"), "value" to p("string", "Option value"))),
+            McpTool("page.submit", "提交表单",
+                mapOf("selector" to p("string", "CSS selector of form"))),
+            McpTool("page.check", "勾选 checkbox/radio",
+                mapOf("selector" to p("string", "CSS selector"))),
+            McpTool("page.uncheck", "取消勾选",
+                mapOf("selector" to p("string", "CSS selector"))),
+            McpTool("page.key", "派发按键 (Enter/Tab/ArrowDown/单字符)",
+                mapOf("key" to p("string", "Key name"))),
+            // 查询 (内置过滤)
+            McpTool("page.content", "提取正文 + 内置过滤 (--grep/--regex/-i/--head/--tail)",
+                mapOf("grep" to p("string", "Filter pattern"), "regex" to p("boolean", "grep as regex"),
+                    "ignoreCase" to p("boolean", "case-insensitive"),
+                    "head" to p("int", "First N lines"), "tail" to p("int", "Last N lines"))),
+            McpTool("page.text", "元素文本",
+                mapOf("selector" to p("string", "CSS selector"))),
+            McpTool("page.attr", "元素属性",
+                mapOf("selector" to p("string", "CSS selector"), "attribute" to p("string", "Attribute name"))),
+            McpTool("page.wait_selector", "轮询等待元素出现",
+                mapOf("selector" to p("string", "CSS selector"), "timeoutMs" to p("int", "Max wait, default 5000"))),
+            // 滚动/JS/信息/历史
+            McpTool("page.scroll", "绝对滚动",
+                mapOf("x" to p("int", "X"), "y" to p("int", "Y"))),
+            McpTool("page.scroll_by", "相对滚动",
+                mapOf("dy" to p("int", "Delta Y"))),
+            McpTool("page.eval", "执行 JS",
+                mapOf("script" to p("string", "JavaScript code"))),
+            McpTool("page.url", "当前页 URL", emptyMap()),
+            McpTool("page.title", "当前页标题", emptyMap()),
+            McpTool("page.back", "历史回退", emptyMap()),
+            McpTool("page.forward", "历史前进", emptyMap()),
+        )
+    }
+
+    private fun browserTools(): List<McpTool> {
+        fun p(type: String, desc: String) = mapOf("type" to type, "description" to desc)
+        return listOf(
+            // 标签页管理 (page.* 不覆盖, 保留)
+            McpTool("tabs", "列出全部标签页 (id/url/title/loading state)", emptyMap()),
+            McpTool("tab", "切换标签页", mapOf("n" to p("int", "Tab id"))),
+            McpTool("tab.open", "在指定标签页打开 URL (自动创建)", mapOf("n" to p("int", "Tab id"), "url" to p("string", "URL"))),
+            McpTool("tab.close", "关闭标签页", mapOf("n" to p("int", "Tab id"))),
+            // Cookie / 存储 (page.* 不覆盖, 保留)
+            McpTool("cookies", "获取当前 URL 的 Cookie", emptyMap()),
+            McpTool("storage", "localStorage/sessionStorage get/set/clear",
+                mapOf("type" to p("string", "local or session"), "op" to p("string", "get/set/clear"),
+                    "key" to p("string", "Key"), "value" to p("string", "Value"))),
+        )
+    }
 
     // ── CLI ─────────────────────────────────────────────────────────────
 

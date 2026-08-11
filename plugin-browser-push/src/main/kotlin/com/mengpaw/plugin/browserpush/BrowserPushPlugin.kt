@@ -139,7 +139,7 @@ class BrowserPushPlugin : Plugin {
             acpTransport?.send(AcpMessage.browserPushResponse(ctx.sessionId, from, accepted = true))
         } catch (_: Exception) { }
 
-        return ExecutionResult.ok("已接受推送，正在打开: $url\n使用 browser.open 打开此 URL。")
+        return ExecutionResult.ok("已接受推送，正在打开: $url\n使用 page.goto 打开此 URL。")
     }
 
     // ── browser.push.reject ─────────────────────────────────────────────

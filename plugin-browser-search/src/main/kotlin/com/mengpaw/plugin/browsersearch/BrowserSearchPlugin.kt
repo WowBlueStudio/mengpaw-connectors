@@ -32,7 +32,7 @@ import java.util.Locale
  * 1. **网页转 Markdown 管道** — clean 提取正文 → md 转 Markdown 存
  *    `DataPaths.SEARCH_OUTPUTS`, 供 Agent 阅读/提炼, 回传浏览器预览
  *    (抓取用 net.curl, 本插件不做网络抓取 — 避免与内核重复造轮子)
- * 2. **搜索引擎结果提取** — 生成各搜索引擎结果页的提取 JS, 交 browser.eval 执行
+ * 2. **搜索引擎结果提取** — 生成各搜索引擎结果页的提取 JS, 交 page.eval 执行
  */
 class BrowserSearchPlugin : Plugin {
     override val metadata = PluginMetadata(
@@ -84,7 +84,7 @@ class BrowserSearchPlugin : Plugin {
             "## 搜索结果提取 ($engine)\n\n" +
             "将以下 JS 注入浏览器以提取结果:\n\n" +
             "```js\n$js\n```\n\n" +
-            "提示: 使用 browser.eval 执行上述代码。"
+            "提示: 使用 page.eval 执行上述代码。"
         )
     }
 
@@ -95,9 +95,9 @@ class BrowserSearchPlugin : Plugin {
 ## 网页转档使用指南
 
 ### 工作流
-1. browser.open https://www.google.com/search?q=关键词
+1. page.goto https://www.google.com/search?q=关键词
 2. search.extract google  → 获取提取脚本
-3. browser.eval <脚本>    → 执行提取
+3. page.eval <脚本>    → 执行提取
 4. 分析返回的 JSON 结果
 
 ### 网页转 Markdown 管道

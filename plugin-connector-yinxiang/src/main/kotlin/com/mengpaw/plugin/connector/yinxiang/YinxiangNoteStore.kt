@@ -32,6 +32,8 @@ interface NoteStoreGateway {
     ): NotesMetadataList
 
     suspend fun getNote(guid: String, withContent: Boolean, withResourcesData: Boolean): Note
+    /** 按资源 guid 下载原始字节 (正文与附件分离, 避免大附件全量进内存)。 */
+    suspend fun getResourceData(resourceGuid: String): ByteArray
     suspend fun createNote(note: Note): Note
     suspend fun updateNote(note: Note): Note
     suspend fun deleteNote(guid: String)
@@ -58,6 +60,9 @@ class EdamNoteStore(private val token: String) : NoteStoreGateway {
 
     override suspend fun getNote(guid: String, withContent: Boolean, withResourcesData: Boolean): Note =
         io { client().getNote(guid, withContent, withResourcesData, false, false) }
+
+    override suspend fun getResourceData(resourceGuid: String): ByteArray =
+        io { client().getResourceData(resourceGuid) }
 
     override suspend fun createNote(note: Note): Note = io { client().createNote(note) }
     override suspend fun updateNote(note: Note): Note = io { client().updateNote(note) }

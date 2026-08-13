@@ -12,9 +12,11 @@ import com.mengpaw.kernel.cli.ExecutionContext
 import com.mengpaw.kernel.cli.ExecutionResult
 import com.mengpaw.kernel.plugin.CommandHandler
 import com.mengpaw.plugin.connector.common.ConnectorConfigStore
+import kotlinx.coroutines.CancellationException
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
@@ -27,8 +29,10 @@ import java.util.Locale
  */
 object YinxiangCommandHandlers {
 
+    /** 印象笔记单资源大小上限 (约 EDAM 资源上限), 超过则跳过并提示, 防 OOM。internal 供测试断言。 */
+    internal const val MAX_RESOURCE_BYTES = 25 * 1024 * 1024
     private val converter: NoteContentConverter = PlainTextConverter()
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
+    private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.CHINA)
     private val support = YinxiangCommandSupport
 
     /** 网关工厂 — 生产默认 [EdamNoteStore]; 测试注入 fake 以覆盖成功路径。 */
@@ -143,6 +147,7 @@ object YinxiangCommandHandlers {
         val list = try {
             store.findNotesMetadata(filter, 0, limit, spec)
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
         val notebooks = support.notebookNameMap(store)
@@ -152,7 +157,7 @@ object YinxiangCommandHandlers {
         if (meta.isEmpty()) sb.appendLine("(无结果)")
         meta.forEachIndexed { index, m ->
             val name = notebooks[m.notebookGuid] ?: m.notebookGuid ?: "-"
-            val updated = if (m.updated > 0) dateFormat.format(Date(m.updated)) else "-"
+            val updated = if (m.updated > 0) formatTime(m.updated) else "-"
             sb.appendLine("${index + 1}. ${m.title ?: "(无标题)"} [${m.guid}] [更新: $updated] [笔记本: $name]")
         }
         return ExecutionResult.ok(sb.toString().trimEnd())
@@ -170,14 +175,15 @@ object YinxiangCommandHandlers {
         }
         val store = support.storeOrNull() ?: return support.tokenRequired()
         val note = try {
-            store.getNote(guid, true, true)
+            store.getNote(guid, true, false)
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
         val sb = StringBuilder()
         sb.appendLine("标题: ${note.title ?: "(无标题)"}")
         sb.appendLine("GUID: ${note.guid}")
-        sb.appendLine("更新: ${if (note.updated > 0) dateFormat.format(Date(note.updated)) else "-"}")
+        sb.appendLine("更新: ${if (note.updated > 0) formatTime(note.updated) else "-"}")
         sb.appendLine("────────")
         sb.appendLine(converter.enmlToText(note.content.orEmpty()))
         sb.appendLine("────────")
@@ -187,17 +193,26 @@ object YinxiangCommandHandlers {
             val noteDir = File(outDir, guid)
             val saved = mutableListOf<Pair<String, String>>()
             resources.forEach { res ->
-                val body = res.data?.body
-                if (body == null || body.isEmpty()) return@forEach
                 val rawName = res.attributes?.fileName ?: "resource-${res.guid}"
                 val fileName = support.sanitizeFileName(rawName)
                 val target = File(noteDir, fileName)
                 try {
+                    val body = store.getResourceData(res.guid)
+                    if (body.size > MAX_RESOURCE_BYTES) {
+                        saved += (fileName to "超过大小上限 ${MAX_RESOURCE_BYTES / 1024 / 1024}MB, 跳过")
+                        return@forEach
+                    }
+                    if (body.isEmpty()) {
+                        saved += (fileName to "下载为空")
+                        return@forEach
+                    }
                     target.parentFile?.mkdirs()
                     target.writeBytes(body)
                     saved += (fileName to target.absolutePath)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    saved += (fileName to "保存失败: ${e.message}")
+                    saved += (fileName to "下载失败: ${e.message}")
                 }
             }
             sb.appendLine("附件 (${saved.size}/${resources.size}):")
@@ -238,6 +253,7 @@ object YinxiangCommandHandlers {
         val created = try {
             store.createNote(note)
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
         return ExecutionResult.ok("已创建笔记: ${created.title ?: "(无标题)"} [${created.guid}]")
@@ -257,8 +273,11 @@ object YinxiangCommandHandlers {
         val existing = try {
             store.getNote(guid, true, false)
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
+        // 仅更新标题/内容/笔记本字段 — 清空资源列表, 防 updateNote 携带不完整资源数据触发服务端校验分歧
+        existing.unsetResources()
         val newTitle = support.flagValue(args, "--title")
         val newContent = support.flagValue(args, "--content")
         val newNotebook = support.flagValue(args, "--notebook")
@@ -280,6 +299,7 @@ object YinxiangCommandHandlers {
         val saved = try {
             store.updateNote(existing)
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
         return ExecutionResult.ok("已更新笔记: ${saved.title ?: "(无标题)"} [${saved.guid}]")
@@ -299,6 +319,7 @@ object YinxiangCommandHandlers {
         try {
             store.deleteNote(guid)
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
         return ExecutionResult.ok("已移入废纸篓: $guid (可在印象笔记废纸篓恢复)")
@@ -311,6 +332,7 @@ object YinxiangCommandHandlers {
         val list = try {
             store.listNotebooks()
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
         if (list.isEmpty()) return ExecutionResult.ok("笔记本: (无)")
@@ -327,6 +349,7 @@ object YinxiangCommandHandlers {
         val list = try {
             store.listTags()
         } catch (e: Exception) {
+            rethrowIfCancelled(e)
             return ExecutionResult.fail(e.toYinxiangMessage(), errorCode = ErrorCodes.ERR_INTERNAL)
         }
         if (list.isEmpty()) return ExecutionResult.ok("标签: (无)")
@@ -335,4 +358,11 @@ object YinxiangCommandHandlers {
         return ExecutionResult.ok(sb.toString().trimEnd())
     }
 
+    private fun formatTime(epochMillis: Long): String =
+        Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(dateTimeFormatter)
+
+    /** 协程取消必须向上传播, 不能转成失败结果。 */
+    private fun rethrowIfCancelled(e: Exception) {
+        if (e is CancellationException) throw e
+    }
 }

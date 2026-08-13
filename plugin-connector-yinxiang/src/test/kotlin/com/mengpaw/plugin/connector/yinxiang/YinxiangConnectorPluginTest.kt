@@ -144,6 +144,25 @@ class YinxiangConnectorPluginTest {
     }
 
     @Test
+    fun `get skips oversized resource`() {
+        fake.resourceBodies["res-1"] = ByteArray(YinxiangCommandHandlers.MAX_RESOURCE_BYTES + 1)
+        val outDir = File(tmpBase, "out-big").absolutePath
+        val result = run("get", "note-guid-2", "--out", outDir)
+        assertTrue(result.success)
+        assertTrue(result.output.contains("超过大小上限"))
+        assertFalse(File(outDir, "note-guid-2/附件.txt").isFile)
+    }
+
+    @Test
+    fun `get resource download failure keeps text output`() {
+        fake.resourceError = IllegalStateException("模拟下载失败")
+        val result = run("get", "note-guid-2")
+        assertTrue(result.success)
+        assertTrue(result.output.contains("正文"))
+        assertTrue(result.output.contains("下载失败"))
+    }
+
+    @Test
     fun `get invalid guid maps not found`() {
         fake.getError = com.evernote.edam.error.EDAMNotFoundException().apply {
             identifier = "note-guid-404"
@@ -185,6 +204,8 @@ class YinxiangConnectorPluginTest {
         assertTrue(result.success)
         assertEquals("改后标题", fake.lastUpdated?.title)
         assertTrue(fake.lastUpdated?.content?.contains("改后内容") == true)
+        // update 不应携带资源数据 (unsetResources 防御)
+        assertEquals(null, fake.lastUpdated?.resources)
     }
 
     @Test
@@ -270,7 +291,6 @@ class YinxiangConnectorPluginTest {
                     resources = listOf(
                         Resource().apply {
                             this.guid = "res-1"
-                            data = Data().apply { body = "hello-bytes".toByteArray() }
                             attributes = ResourceAttributes().apply { fileName = "附件.txt" }
                         }
                     )
@@ -283,6 +303,11 @@ class YinxiangConnectorPluginTest {
                     updated = 1_700_000_000_000L
                 }
             }
+        }
+
+        override suspend fun getResourceData(resourceGuid: String): ByteArray {
+            resourceError?.let { throw it }
+            return resourceBodies[resourceGuid] ?: "hello-bytes".toByteArray()
         }
 
         override suspend fun createNote(note: Note): Note {
@@ -301,5 +326,8 @@ class YinxiangConnectorPluginTest {
         override suspend fun deleteNote(guid: String) {
             lastDeleted = guid
         }
+
+        val resourceBodies = mutableMapOf<String, ByteArray>()
+        var resourceError: Exception? = null
     }
 }

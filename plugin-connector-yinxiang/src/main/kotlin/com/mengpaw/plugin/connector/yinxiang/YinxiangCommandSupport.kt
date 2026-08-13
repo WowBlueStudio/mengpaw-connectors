@@ -6,6 +6,7 @@ package com.mengpaw.plugin.connector.yinxiang
 import com.mengpaw.kernel.cli.ErrorCodes
 import com.mengpaw.kernel.cli.ExecutionResult
 import com.mengpaw.plugin.connector.common.ConnectorConfigStore
+import com.evernote.auth.EvernoteService
 
 /**
  * 命令共享工具 — 参数解析 / token 访问 / 笔记本解析 / 文件名消毒。
@@ -13,7 +14,8 @@ import com.mengpaw.plugin.connector.common.ConnectorConfigStore
  */
 object YinxiangCommandSupport {
 
-    const val YINXIANG_ENDPOINT = "https://app.yinxiang.com"
+    /** 端点单源: 与 EDAM 客户端一致取自 [EvernoteService.YINXIANG], 避免双处硬编码。 */
+    val YINXIANG_ENDPOINT: String = "https://" + EvernoteService.YINXIANG.host
     const val DEFAULT_LIMIT = 20
 
     fun tokenOrNull(): String? {
@@ -42,6 +44,7 @@ object YinxiangCommandSupport {
     suspend fun notebookNameMap(store: NoteStoreGateway): Map<String?, String> = try {
         store.listNotebooks().associate { it.guid to (it.name ?: it.guid ?: "?") }
     } catch (_: Exception) {
+        // 笔记本列表仅用于搜索结果美化 — 拉取失败时降级为只显示 guid, 不影响搜索主流程
         emptyMap()
     }
 

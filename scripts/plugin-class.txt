@@ -18,3 +18,4 @@ plugin-connector-qwenpaw: com.mengpaw.plugin.connector.qwenpaw.QwenPawConnectorP
 plugin-connector-claude-code: com.mengpaw.plugin.connector.claude_code.ClaudeCodeConnectorPlugin
 plugin-connector-reasonix: com.mengpaw.plugin.connector.reasonix.ReasonixConnectorPlugin
 plugin-connector-trae: com.mengpaw.plugin.connector.trae.TraeConnectorPlugin
+plugin-connector-yinxiang: com.mengpaw.plugin.connector.yinxiang.YinxiangConnectorPlugin

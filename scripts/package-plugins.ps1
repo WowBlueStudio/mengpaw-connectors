@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 深圳哇蓝文化科技有限公司 (ShenZhen wowblue culture and technology CO.,LTD.)
+﻿# SPDX-FileCopyrightText: 2026 深圳哇蓝文化科技有限公司 (ShenZhen wowblue culture and technology CO.,LTD.)
 # SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
@@ -46,7 +46,7 @@ $plain = @(
     "plugin-render", "plugin-comfy", "plugin-browser-push",
     "plugin-browser-search", "plugin-browser-mcp"
 )
-$modules = @($plain + $connectors)
+$modules = @($plain + $connectors + @("plugin-connector-yinxiang"))
 
 # ── 3. 依赖 jar (连接器 fat 用, Gradle 缓存) ────────────────────
 $cacheRoot = Join-Path $env:USERPROFILE ".gradle\caches\modules-2\files-2.1"
@@ -73,9 +73,18 @@ Write-Host "依赖 jars ($($depJars.Count)): $($depJars -join ', ')" -Foreground
 # ── 4. 构建全部 AAR ─────────────────────────────────────────────
 Push-Location $RootDir
 try {
-    & .\gradlew.bat assembleRelease --console=plain 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "assembleRelease 失败 (exit $LASTEXITCODE)" }
+& .\gradlew.bat assembleRelease --console=plain 2>&1 | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "assembleRelease 失败 (exit $LASTEXITCODE)" }
 } finally { Pop-Location }
+
+# ── 4.5 印象笔记 fat 依赖 (evernote-api/jsoup 宿主未内置; 需先构建让 Gradle 拉入缓存) ──
+$yinxiangDeps = @(
+    (Find-Jar "com.evernote" "evernote-api" "1.25.1"),
+    (Find-Jar "org.jsoup" "jsoup" "1.17.2")
+) | Where-Object { $_ -ne $null }
+if ($yinxiangDeps.Count -lt 2) {
+    Write-Warning "Gradle 缓存中找不到 evernote-api/jsoup — plugin-connector-yinxiang 打包将缺少依赖"
+}
 
 # ── 5. 主类清单 ─────────────────────────────────────────────────
 $manifest = @{}
@@ -111,13 +120,15 @@ foreach ($module in $modules) {
         Pop-Location
 
         $inputs = @(Join-Path $work "in\$module.jar")
-        if ($module -in $connectors) {
+        $fatRequired = ($module -in $connectors) -or ($module -eq "plugin-connector-yinxiang")
+        $moduleDeps = if ($module -eq "plugin-connector-yinxiang") { $yinxiangDeps } else { $depJars }
+        if ($fatRequired) {
             if (-not $commonExists) { throw "缺少 plugin-connector-common AAR" }
             Push-Location (Join-Path $work "in")
             & jar xf $commonAar classes.jar | Out-Null
             Rename-Item (Join-Path $work "in\classes.jar") "common.jar"
             Pop-Location
-            $inputs = $inputs + @(Join-Path $work "in\common.jar") + $depJars
+            $inputs = $inputs + @(Join-Path $work "in\common.jar") + $moduleDeps
         }
 
         & $d8 --release --min-api 26 --lib $androidJar --output (Join-Path $work "dex") $inputs 2>&1 | Out-Host
@@ -125,7 +136,7 @@ foreach ($module in $modules) {
 
         Copy-Item (Join-Path $work "dex\classes.dex") (Join-Path $work "stage\classes.dex")
         [System.IO.File]::WriteAllText((Join-Path $work "stage\META-INF\plugin-class"), $mainClass, $utf8)
-        $suffix = if ($module -in $connectors) { "plugin" } else { "release" }
+        $suffix = if ($fatRequired) { "plugin" } else { "release" }
         $outJar = Join-Path $OutDir "$module-$suffix.jar"
         Push-Location (Join-Path $work "stage")
         & jar cf $outJar classes.dex META-INF/plugin-class | Out-Null

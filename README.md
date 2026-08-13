@@ -19,7 +19,7 @@ MengPaw（檬爪）[全部外置插件](https://github.com/WowBlueStudio/MengPaw
 | `plugin-browser-search` | `search` | 网页转 Markdown 管道 | ktor (Apache-2.0) |
 | `plugin-browser-mcp` | `browser` | MP 浏览器能力暴露为 MCP 工具 | coroutines (Apache-2.0) |
 
-### 连接器（5 + 共享库）
+### 连接器（6 + 共享库）
 
 | 模块 | 命名空间 | 通道 | 对接框架 | 上游许可 |
 |------|---------|------|---------|---------|
@@ -29,15 +29,18 @@ MengPaw（檬爪）[全部外置插件](https://github.com/WowBlueStudio/MengPaw
 | `plugin-connector-reasonix` | `reasonix` | SSH → `reasonix run` | esengine/DeepSeek-Reasonix | MIT |
 | `plugin-connector-trae` | `trae-ide` | SSH → `trae-cli run` | bytedance/trae-agent | MIT |
 | `plugin-connector-qwenpaw` | `qwenpaw` | REST :8088 (默认) + SSH ACP | agentscope-ai/QwenPaw | Apache-2.0 |
+| `plugin-connector-yinxiang` | `connector-yinxiang` | EDAM 云 API (app.yinxiang.com) | Evernote 官方 Java SDK | Apache / Evernote SDK License |
 
 连接器实现内核 `spi.FrameworkAdapter`（`frameworkName` / `connect` / `callTool` / `isOnline`），安装进 MengPaw 后注册到连接器注册表，`framework.adapters` 可见、`framework.connect <peer>` 即可对接。完整接入指南见主仓库 [PROTOCOL.md](https://github.com/WowBlueStudio/MengPaw/blob/master/docs/PROTOCOL.md)。
+
+> 例外：`plugin-connector-yinxiang` 为 EDAM 云 API 直连，不实现 FrameworkAdapter，命令直接以 `connector-yinxiang.*` 调用（token 经 `connector-yinxiang.config --token-file <路径> --yes` 配置）。
 
 ## 构建
 
 要求：JDK 17 + Android SDK 35（`local.properties` 配置 `sdk.dir`）。
 
 ```bash
-./gradlew assembleRelease    # 全部 14 个 AAR
+./gradlew assembleRelease    # 全部 15 个 AAR
 ./gradlew :plugin-connector-common:testDebugUnitTest   # 共享库单测
 ```
 
